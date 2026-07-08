@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@ethglobal-openagent/openclaw-keeperhub": "^1.8.3"
+  }
+}

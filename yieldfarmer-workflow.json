@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "exportedAt": "2026-07-08T08:12:13.426Z",
+  "workflow": {
+    "name": "Untitled 4",
+    "description": ""
+  },
+  "nodes": [
+    {
+      "id": "HrW5LyM5TkIEFzhKV9jBc",
+      "data": {
+        "type": "trigger",
+        "label": "",
+        "config": {
+          "triggerType": "Manual"
+        },
+        "status": "idle",
+        "description": ""
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "M6aoWx7QB_X1G2S7ANkwi",
+      "data": {
+        "type": "action",
+        "label": "Check Sepolia ETH Balance",
+        "config": {
+          "address": "0x54f9fe5a1f63064fc083928df60a95db2dc2ce39",
+          "network": "11155111",
+          "actionType": "web3/check-balance"
+        },
+        "status": "idle",
+        "description": ""
+      },
+      "type": "action",
+      "position": {
+        "x": 272,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "4korrlPjpGnM9j4PMdyYg",
+      "type": "animated",
+      "source": "HrW5LyM5TkIEFzhKV9jBc",
+      "target": "M6aoWx7QB_X1G2S7ANkwi"
+    }
+  ],
+  "integrationBindings": []
+}
