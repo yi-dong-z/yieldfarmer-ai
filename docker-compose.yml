@@ -1,0 +1,56 @@
+# ─── YieldFarmer AI — Docker Compose ───
+# Usage:
+#   1. cp .env.example .env   # fill in API keys
+#   2. docker compose up -d
+#   3. Backend  → http://localhost:8000/docs
+#      Frontend → http://localhost:3000
+
+services:
+  backend:
+    image: python:3.12-slim
+    container_name: yieldfarmer-backend
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - KEEPERHUB_API_KEY=${KEEPERHUB_API_KEY}
+      - KEEPERHUB_API_URL=${KEEPERHUB_API_URL:-https://app.keeperhub.com/api}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      - CHAIN_ID=${CHAIN_ID:-11155111}
+      - RPC_URL=${RPC_URL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    command: >
+      sh -c "pip install -r agent/requirements.txt
+      && uvicorn agent.main:app --host 0.0.0.0 --port 8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    image: node:20-slim
+    container_name: yieldfarmer-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    command: >
+      sh -c "npm install && npx next dev -p 3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

@@ -4,9 +4,11 @@ YieldFarmer AI — FastAPI Server
 REST API for the AI-powered DeFi automation agent.
 """
 
+import asyncio
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
 
 from agent.agent import get_agent, STRATEGIES
 from agent.keeperhub_client import get_keeperhub
@@ -17,6 +19,9 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# NOTE: CORS wildcard + no auth is intentional for hackathon demo.
+# The KeeperHub API key in server-side config is the effective auth layer.
+# For production: restrict origins, add rate limiting, add API key auth.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -109,8 +114,6 @@ async def get_yields():
             or "yield" in (w.get("name") or "").lower()
         ]
 
-        import asyncio
-
         async def call_one(wf):
             slug = wf.get("listedSlug")
             try:
@@ -132,13 +135,14 @@ async def get_yields():
                                 "apy": float(data),
                                 "asset": "unknown",
                             })
-            except Exception:
+            except Exception as e:
+                logging.getLogger("yieldfarmer").warning(f"Yield workflow {slug} failed: {e}")
                 pass
 
         if yield_wfs:
             await asyncio.gather(*[call_one(wf) for wf in yield_wfs])
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("yieldfarmer").warning(f"Marketplace yield fetch failed: {e}")
 
     if not protocols:
         return FALLBACK_YIELDS

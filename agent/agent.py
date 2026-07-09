@@ -4,7 +4,7 @@ YieldFarmer AI Agent — verified against real KeeperHub API.
 Pattern: NL command → LLM intent parsing → Marketplace workflow call → Result
 """
 
-import json, httpx
+import json, httpx, logging, time
 from agent.config import get_settings
 from agent.keeperhub_client import get_keeperhub
 
@@ -120,8 +120,9 @@ async def simulate_intent(user_message: str, workflows: list[dict]) -> dict:
         # Split slug into tokens for fuzzy matching
         slug_parts = set(slug.replace("-", " ").replace("_", " ").split())
         name_parts = set(name.replace("-", " ").replace("_", " ").split())
+        desc_parts = set(desc.replace("-", " ").replace("_", " ").split())
         all_text = f"{slug} {name} {desc}"
-        all_parts = slug_parts | name_parts
+        all_parts = slug_parts | name_parts | desc_parts
 
         # Score: count how many slug/name tokens appear in the message
         score = sum(1 for p in all_parts if p in msg_lower and len(p) > 2)
@@ -143,6 +144,8 @@ class YieldFarmerAgent:
 
     def __init__(self):
         self.kh = get_keeperhub()
+        self._marketplace_cache: list[dict] | None = None
+        self._marketplace_cache_time: float = 0
 
     async def execute(self, user_message: str) -> dict:
         # Step 0: Check if user message matches a strategy template
@@ -155,8 +158,14 @@ class YieldFarmerAgent:
                 "explanation": f"匹配到策略模板: {matched['name']}",
             }
 
-        # Step 1: Get available marketplace workflows
-        workflows = await self.kh.list_marketplace()
+        # Step 1: Get available marketplace workflows (with 60s TTL cache)
+        now = time.time()
+        if self._marketplace_cache is not None and (now - self._marketplace_cache_time) < 60:
+            workflows = self._marketplace_cache
+        else:
+            workflows = await self.kh.list_marketplace()
+            self._marketplace_cache = workflows
+            self._marketplace_cache_time = now
 
         # Step 2: Parse intent (LLM if key available, else keyword match)
         try:
@@ -164,7 +173,8 @@ class YieldFarmerAgent:
                 parsed = await parse_intent(user_message, workflows)
             else:
                 parsed = await simulate_intent(user_message, workflows)
-        except Exception:
+        except Exception as e:
+            logging.getLogger("yieldfarmer").warning(f"LLM intent parse failed, falling back to keyword match: {e}")
             parsed = await simulate_intent(user_message, workflows)
 
         slug = parsed.get("workflow_slug")

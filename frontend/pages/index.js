@@ -49,6 +49,23 @@ export default function Home() {
   // ── Confirmation modal state ──
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmIntent, setConfirmIntent] = useState('');
+  const [matchedSlug, setMatchedSlug] = useState('');
+  const [matchingWorkflow, setMatchingWorkflow] = useState(false);
+  const [matchedWorkflowName, setMatchedWorkflowName] = useState('');
+
+  // ── Strategies & Yields state ──
+  const [strategies, setStrategies] = useState([]);
+  const [yields, setYields] = useState([]);
+  const [yieldsLoading, setYieldsLoading] = useState(true);
+  const [yieldsError, setYieldsError] = useState('');
+
+  // ── Dynamic examples (initial fallback, replaced by workflow slugs) ──
+  const [examples, setExamples] = useState([
+    'Supply 0.01 ETH to Aave V3 on Sepolia',
+    'Create a workflow to auto-compound my Spark rewards every hour',
+    'Swap 10 USDC to ETH on Uniswap when gas is low',
+    'Monitor my Morpho position and alert me if health factor drops below 1.5',
+  ]);
 
   // ── Mobile detection ──
   const [isMobile, setIsMobile] = useState(false);
@@ -59,9 +76,72 @@ export default function Home() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // ── Chat: send command → show confirmation modal ──
-  const sendCommand = () => {
+  // ── Fetch strategies, yields, and dynamic examples on mount ──
+  useEffect(() => {
+    fetch(`${API_URL}/api/strategies`)
+      .then((res) => res.json())
+      .then((data) => setStrategies(data.strategies || []))
+      .catch(() => {});
+
+    setYieldsLoading(true);
+    fetch(`${API_URL}/api/yields`)
+      .then((res) => res.json())
+      .then((data) => setYields(data.protocols || []))
+      .catch(() => setYieldsError('Failed to load yields'))
+      .finally(() => setYieldsLoading(false));
+
+    fetch(`${API_URL}/api/workflows`)
+      .then((res) => res.json())
+      .then((data) => {
+        const wfs = data.workflows || [];
+        if (wfs.length > 0) {
+          const slugs = wfs
+            .slice(0, 4)
+            .map((wf) => wf.listedSlug || wf.slug)
+            .filter(Boolean);
+          if (slugs.length > 0) setExamples(slugs);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Chat: send command → match workflow → show confirmation modal ──
+  const sendCommand = async () => {
     if (!message.trim()) return;
+
+    setMatchingWorkflow(true);
+    let bestSlug = '';
+    let bestName = '';
+    try {
+      const res = await fetch(`${API_URL}/api/workflows`);
+      const data = await res.json();
+      const wfs = data.workflows || [];
+      const msgLower = message.toLowerCase();
+      // Exact slug match first
+      for (const wf of wfs) {
+        const slug = wf.listedSlug || wf.slug || '';
+        if (slug && msgLower.includes(slug.toLowerCase())) {
+          bestSlug = slug;
+          bestName = wf.name || slug;
+          break;
+        }
+      }
+      // Name match fallback
+      if (!bestSlug) {
+        for (const wf of wfs) {
+          const name = wf.name || '';
+          if (name && msgLower.includes(name.toLowerCase())) {
+            bestSlug = wf.listedSlug || wf.slug || '';
+            bestName = name;
+            break;
+          }
+        }
+      }
+    } catch (_) {}
+    setMatchingWorkflow(false);
+
+    setMatchedSlug(bestSlug);
+    setMatchedWorkflowName(bestName);
     setConfirmIntent(message);
     setShowConfirm(true);
   };
@@ -191,14 +271,6 @@ export default function Home() {
     setExecLoading((prev) => ({ ...prev, [slug]: false }));
   };
 
-  // ── Examples ──
-  const examples = [
-    'Supply 0.01 ETH to Aave V3 on Sepolia',
-    'Create a workflow to auto-compound my Spark rewards every hour',
-    'Swap 10 USDC to ETH on Uniswap when gas is low',
-    'Monitor my Morpho position and alert me if health factor drops below 1.5',
-  ];
-
   const tabStyle = (tab) => ({
     padding: isMobile ? '8px 16px' : '10px 24px',
     background: activeTab === tab ? '#00ff4f' : 'transparent',
@@ -215,8 +287,14 @@ export default function Home() {
     <div style={styles.container}>
       {/* Global responsive styles */}
       <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
         @media (max-width: 767px) {
           .hide-mobile { display: none !important; }
+        }
+        @keyframes pulse-skeleton {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.6; }
         }
       `}</style>
 
@@ -245,6 +323,19 @@ export default function Home() {
           <>
             {/* Chat Area */}
             <div style={styles.chatArea}>
+              {history.length > 0 && (
+                <div style={styles.chatHeaderRow}>
+                  <button
+                    style={styles.clearChatBtn}
+                    onClick={() => {
+                      setHistory([]);
+                      setMessage('');
+                    }}
+                  >
+                    清空对话
+                  </button>
+                </div>
+              )}
               {history.length === 0 ? (
                 <div style={styles.welcome}>
                   <h2 style={styles.welcomeTitle}>Your DeFi Automation Agent</h2>
@@ -310,12 +401,33 @@ export default function Home() {
                 ))
               )}
               {loading && (
-                <div style={{ ...styles.message, ...styles.botMsg }}>
-                  <strong>  Agent:</strong>
-                  <p style={styles.msgText}>Thinking...</p>
+                <div style={styles.skeletonGroup}>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} style={styles.skeletonCard}>
+                      <div style={{ ...styles.skeletonLine, width: '70%' }} />
+                      <div style={{ ...styles.skeletonLine, width: '50%' }} />
+                      <div style={{ ...styles.skeletonLine, width: '85%' }} />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
+
+            {/* Strategies Selector */}
+            {strategies.length > 0 && (
+              <div style={styles.strategiesRow}>
+                {strategies.map((s, i) => (
+                  <button
+                    key={s.key || i}
+                    style={styles.strategyPill}
+                    onClick={() => setMessage(s.name || s.key)}
+                    title={s.description || ''}
+                  >
+                    {s.name || s.key}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Input */}
             <div style={styles.inputArea}>
@@ -350,8 +462,14 @@ export default function Home() {
 
             <div style={styles.chatArea}>
               {wfLoading && workflows.length === 0 ? (
-                <div style={styles.welcome}>
-                  <p style={styles.welcomeText}>Loading workflows...</p>
+                <div style={styles.skeletonGroup}>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} style={styles.skeletonCard}>
+                      <div style={{ ...styles.skeletonLine, width: '60%' }} />
+                      <div style={{ ...styles.skeletonLine, width: '40%' }} />
+                      <div style={{ ...styles.skeletonLine, width: '80%' }} />
+                    </div>
+                  ))}
                 </div>
               ) : workflows.length === 0 && !wfLoading ? (
                 <div style={styles.welcome}>
@@ -455,6 +573,30 @@ export default function Home() {
                 })
               )}
             </div>
+
+            {/* Yield Comparison */}
+            <div style={styles.yieldsSection}>
+              <h3 style={styles.yieldsTitle}> Yield Comparison</h3>
+              {yieldsError ? (
+                <p style={styles.wfError}>{yieldsError}</p>
+              ) : yieldsLoading ? (
+                <p style={styles.welcomeText}>正在加载收益数据...</p>
+              ) : yields.length === 0 ? (
+                <p style={styles.welcomeText}>暂无收益数据</p>
+              ) : (
+                <div style={styles.yieldsGrid}>
+                  {yields.map((y, i) => (
+                    <div key={i} style={styles.yieldCard}>
+                      <span style={styles.yieldProtocol}>{y.name}</span>
+                      <span style={styles.yieldApy}>
+                        {y.apy != null ? `${Number(y.apy).toFixed(2)}% APY` : 'N/A'}
+                      </span>
+                      {y.asset && <span style={styles.yieldAsset}>{y.asset}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
       </main>
@@ -474,8 +616,17 @@ export default function Home() {
                 <span style={styles.modalValue}>{confirmIntent}</span>
               </div>
               <div style={styles.modalRow}>
-                <span style={styles.modalLabel}>Workflow</span>
-                <span style={styles.modalHint}>点击确认后将自动匹配最佳工作流</span>
+                <span style={styles.modalLabel}>匹配工作流</span>
+                <span style={styles.modalValueSlug}>
+                  {matchingWorkflow
+                    ? '⏳ 匹配中...'
+                    : matchedSlug
+                    ? <span style={styles.modalMatchRow}>
+                        <span style={styles.modalSlugCode}>{matchedWorkflowName || matchedSlug}</span>
+                        <span style={styles.modalSlugCode}>{matchedSlug}</span>
+                      </span>
+                    : <span style={styles.modalHint}>未匹配到精确工作流，将由 AI 自动选择</span>}
+                </span>
               </div>
               <div style={styles.modalRow}>
                 <span style={styles.modalLabel}>预估参数</span>
@@ -504,9 +655,9 @@ const styles = {
   // ── Layout ──
   container: {
     minHeight: '100vh',
-    background: '#0a0e17',
-    color: '#e0e0e0',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    background: '#08090a',
+    color: '#d0d6e0',
+    fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
     display: 'flex',
     flexDirection: 'column',
   },
@@ -516,31 +667,32 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '12px 20px',
-    borderBottom: '1px solid #1a2436',
-    background: '#0d1320',
+    padding: '14px 24px',
+    borderBottom: '1px solid rgba(255,255,255,0.05)',
+    background: '#0f1011',
     flexWrap: 'wrap',
     gap: '8px',
   },
   logo: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoIcon: { fontSize: '24px' },
-  title: { fontSize: '18px', fontWeight: 700, color: '#00ff4f', margin: 0 },
+  title: { fontSize: '18px', fontWeight: 600, color: '#00ff4f', margin: 0, letterSpacing: '-0.36px' },
   badge: {
-    background: '#1a2436',
+    background: 'rgba(255,255,255,0.05)',
     padding: '4px 12px',
-    borderRadius: '20px',
+    borderRadius: '9999px',
     fontSize: '12px',
-    color: '#7a9ca8',
+    color: '#8a8f98',
     whiteSpace: 'nowrap',
+    border: '1px solid rgba(255,255,255,0.08)',
   },
 
   // ── Tab bar ──
   tabBar: {
     display: 'flex',
-    gap: '8px',
-    padding: '12px 20px',
-    borderBottom: '1px solid #1a2436',
-    background: '#0a0e17',
+    gap: '6px',
+    padding: '10px 24px',
+    borderBottom: '1px solid rgba(255,255,255,0.05)',
+    background: '#08090a',
   },
 
   // ── Main ──
@@ -554,6 +706,24 @@ const styles = {
     padding: '20px',
   },
   chatArea: { flex: 1, overflowY: 'auto', marginBottom: '16px' },
+
+  // ── Chat header row (clear button) ──
+  chatHeaderRow: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginBottom: '10px',
+  },
+  clearChatBtn: {
+    background: 'transparent',
+    color: '#62666d',
+    border: '1px solid rgba(255,255,255,0.08)',
+    padding: '4px 12px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 500,
+    transition: 'all 0.2s',
+  },
 
   // ── Welcome ──
   welcome: { textAlign: 'center', paddingTop: '40px' },
@@ -578,32 +748,36 @@ const styles = {
 
   // ── Messages ──
   message: {
-    padding: '12px 16px',
-    borderRadius: '12px',
+    padding: '14px 18px',
+    borderRadius: '10px',
     marginBottom: '12px',
     maxWidth: '90%',
+    fontSize: '14px',
+    lineHeight: 1.6,
   },
-  userMsg: { background: '#1a3a2a', alignSelf: 'flex-end', marginLeft: 'auto' },
-  botMsg: { background: '#111827', border: '1px solid #1e293b' },
-  msgText: { margin: '6px 0 0 0', lineHeight: 1.5, wordBreak: 'break-word' },
+  userMsg: { background: 'rgba(0,255,79,0.08)', alignSelf: 'flex-end', marginLeft: 'auto', border: '1px solid rgba(0,255,79,0.12)' },
+  botMsg: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' },
+  msgText: { margin: '6px 0 0 0', lineHeight: 1.6, wordBreak: 'break-word', color: '#d0d6e0' },
   wfId: {
     display: 'inline-block',
     marginTop: '8px',
-    background: '#0d1320',
-    padding: '3px 10px',
+    background: 'rgba(255,255,255,0.04)',
+    padding: '4px 10px',
     borderRadius: '4px',
     fontSize: '12px',
     color: '#00ff4f',
-    fontFamily: 'monospace',
+    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+    border: '1px solid rgba(0,255,79,0.15)',
   },
 
-  // ── Execution card (used in chat + workflows) ──
+  // ── Execution card ──
   execCard: {
     marginTop: '10px',
-    background: '#0d1320',
-    border: '1px solid #1a2436',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: '8px',
-    padding: '10px 12px',
+    padding: '12px 14px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
   },
   execRow: {
     display: 'flex',
@@ -613,67 +787,70 @@ const styles = {
     flexWrap: 'wrap',
   },
   execLabel: {
-    color: '#7a9ca8',
+    color: '#8a8f98',
     fontSize: '11px',
     fontWeight: 600,
     minWidth: '60px',
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.8px',
   },
   execId: {
-    background: '#111827',
-    padding: '2px 8px',
+    background: 'rgba(255,255,255,0.04)',
+    padding: '3px 8px',
     borderRadius: '4px',
     fontSize: '12px',
-    color: '#60a5fa',
-    fontFamily: 'monospace',
+    color: '#7170ff',
+    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
     wordBreak: 'break-all',
     flex: 1,
+    border: '1px solid rgba(113,112,255,0.2)',
   },
   execOutput: {
-    background: '#111827',
+    background: 'rgba(255,255,255,0.03)',
     padding: '8px 10px',
     borderRadius: '4px',
     fontSize: '12px',
-    color: '#94a3b8',
-    fontFamily: 'monospace',
+    color: '#8a8f98',
+    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
     wordBreak: 'break-all',
     whiteSpace: 'pre-wrap',
     maxHeight: '200px',
     overflowY: 'auto',
     flex: 1,
     display: 'block',
+    border: '1px solid rgba(255,255,255,0.05)',
   },
 
   // ── Input ──
   inputArea: {
     display: 'flex',
     gap: '8px',
-    padding: '14px',
-    background: '#0d1320',
-    borderRadius: '12px',
-    border: '1px solid #1a2436',
+    padding: '12px 14px',
+    background: 'rgba(255,255,255,0.05)',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.1)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
   },
   input: {
     flex: 1,
     background: 'transparent',
     border: 'none',
-    color: '#e0e0e0',
+    color: '#f7f8f8',
     fontSize: '15px',
     outline: 'none',
     minWidth: 0,
   },
   sendBtn: {
     background: '#00ff4f',
-    color: '#0a0e17',
+    color: '#08090a',
     border: 'none',
-    padding: '10px 20px',
+    padding: '10px 22px',
     borderRadius: '8px',
-    fontWeight: 700,
+    fontWeight: 600,
     cursor: 'pointer',
     fontSize: '14px',
     whiteSpace: 'nowrap',
-    transition: 'opacity 0.2s',
+    letterSpacing: '-0.2px',
   },
 
   // ── Workflows tab ──
@@ -683,34 +860,35 @@ const styles = {
     alignItems: 'center',
     marginBottom: '16px',
   },
-  wfTitle: { fontSize: '18px', color: '#fff', margin: 0 },
+  wfTitle: { fontSize: '20px', color: '#f7f8f8', margin: 0, fontWeight: 600, letterSpacing: '-0.4px' },
   refreshBtn: {
-    background: '#1a2436',
-    color: '#94a3b8',
-    border: '1px solid #1e293b',
-    padding: '6px 14px',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#8a8f98',
+    border: '1px solid rgba(255,255,255,0.06)',
+    padding: '8px 16px',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '13px',
-    transition: 'all 0.2s',
+    fontWeight: 500,
   },
   wfError: {
-    background: '#3a1a1a',
+    background: 'rgba(239,68,68,0.1)',
     color: '#ef4444',
     padding: '10px 14px',
     borderRadius: '8px',
     fontSize: '13px',
     marginBottom: '16px',
+    border: '1px solid rgba(239,68,68,0.2)',
   },
 
   // ── Workflow cards ──
   wfCard: {
-    background: '#111827',
-    border: '1px solid #1e293b',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
     borderRadius: '10px',
     marginBottom: '10px',
     overflow: 'hidden',
-    transition: 'border-color 0.2s',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
   },
   wfCardHeader: {
     display: 'flex',
@@ -801,14 +979,14 @@ const styles = {
     padding: '20px',
   },
   modalCard: {
-    background: 'rgba(17, 24, 39, 0.95)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(0, 255, 79, 0.2)',
-    borderRadius: '16px',
-    padding: '24px',
+    background: 'rgba(15,16,17,0.97)',
+    backdropFilter: 'blur(24px)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '14px',
+    padding: '28px',
     maxWidth: '480px',
     width: '100%',
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(0, 255, 79, 0.05)',
+    boxShadow: '0 0 0 1px rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.5)',
   },
   modalHeader: {
     display: 'flex',
@@ -816,14 +994,15 @@ const styles = {
     gap: '10px',
     marginBottom: '20px',
     paddingBottom: '14px',
-    borderBottom: '1px solid rgba(30, 41, 59, 0.6)',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
   },
   modalIcon: { fontSize: '24px' },
   modalTitle: {
-    color: '#00ff4f',
+    color: '#f7f8f8',
     fontSize: '18px',
-    fontWeight: 700,
+    fontWeight: 600,
     margin: 0,
+    letterSpacing: '-0.36px',
   },
   modalBody: {
     display: 'flex',
@@ -837,55 +1016,53 @@ const styles = {
     gap: '4px',
   },
   modalLabel: {
-    color: '#7a9ca8',
+    color: '#8a8f98',
     fontSize: '11px',
     fontWeight: 600,
     textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.8px',
   },
   modalValue: {
-    color: '#e0e0e0',
+    color: '#d0d6e0',
     fontSize: '14px',
     fontWeight: 500,
-    background: '#0d1320',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    border: '1px solid #1e293b',
-    lineHeight: 1.4,
+    background: 'rgba(255,255,255,0.03)',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    lineHeight: 1.5,
   },
   modalHint: {
-    color: '#64748b',
+    color: '#62666d',
     fontSize: '13px',
-    fontStyle: 'italic',
   },
   modalActions: {
     display: 'flex',
     gap: '10px',
     justifyContent: 'flex-end',
-    paddingTop: '16px',
-    borderTop: '1px solid rgba(30, 41, 59, 0.6)',
+    paddingTop: '18px',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
   },
   modalCancelBtn: {
-    background: '#1a2436',
-    color: '#94a3b8',
-    border: '1px solid #1e293b',
-    padding: '10px 20px',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#8a8f98',
+    border: '1px solid rgba(255,255,255,0.06)',
+    padding: '10px 22px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 500,
+  },
+  modalConfirmBtn: {
+    background: '#00ff4f',
+    color: '#08090a',
+    border: 'none',
+    padding: '10px 26px',
     borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: 600,
-    transition: 'all 0.2s',
-  },
-  modalConfirmBtn: {
-    background: '#00ff4f',
-    color: '#0a0e17',
-    border: 'none',
-    padding: '10px 24px',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 700,
-    transition: 'opacity 0.2s',
+    letterSpacing: '-0.2px',
   },
 
   // ── Workflow slug badge ──
@@ -937,5 +1114,122 @@ const styles = {
     overflowY: 'auto',
     margin: 0,
     lineHeight: 1.5,
+  },
+
+  // ── Strategies selector ──
+  strategiesRow: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    padding: '0 0 10px 0',
+    scrollbarWidth: 'none',
+    flexWrap: 'nowrap',
+  },
+  strategyPill: {
+    flexShrink: 0,
+    background: 'rgba(0, 255, 79, 0.06)',
+    border: '1px solid rgba(0, 255, 79, 0.15)',
+    color: '#00ff4f',
+    padding: '7px 14px',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
+  },
+
+  // ── Yields section ──
+  yieldsSection: {
+    marginTop: '24px',
+    padding: '16px 18px',
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: '10px',
+  },
+  yieldsTitle: {
+    color: '#f7f8f8',
+    fontSize: '16px',
+    fontWeight: 600,
+    margin: '0 0 14px 0',
+    letterSpacing: '-0.3px',
+  },
+  yieldsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+    gap: '10px',
+  },
+  yieldCard: {
+    background: 'rgba(0, 255, 79, 0.04)',
+    border: '1px solid rgba(0, 255, 79, 0.1)',
+    borderRadius: '8px',
+    padding: '12px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  yieldProtocol: {
+    color: '#d0d6e0',
+    fontSize: '14px',
+    fontWeight: 600,
+  },
+  yieldApy: {
+    color: '#00ff4f',
+    fontSize: '18px',
+    fontWeight: 700,
+    letterSpacing: '-0.3px',
+  },
+  yieldAsset: {
+    color: '#8a8f98',
+    fontSize: '12px',
+    fontWeight: 500,
+  },
+
+  // ── Modal workflow slug ──
+  modalValueSlug: {
+    color: '#d0d6e0',
+    fontSize: '14px',
+    fontWeight: 500,
+    background: 'rgba(255,255,255,0.03)',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    lineHeight: 1.5,
+  },
+  modalSlugCode: {
+    background: 'rgba(0, 255, 79, 0.08)',
+    color: '#00ff4f',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+    border: '1px solid rgba(0, 255, 79, 0.2)',
+  },
+  // ── Skeleton loading ──
+  skeletonGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  skeletonCard: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: '10px',
+    padding: '14px 18px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    animation: 'pulse-skeleton 1.8s ease-in-out infinite',
+  },
+  skeletonLine: {
+    height: '14px',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.06)',
+  },
+  modalMatchRow: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
 };

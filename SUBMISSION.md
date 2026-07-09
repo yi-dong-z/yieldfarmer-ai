@@ -1,8 +1,8 @@
 # 📋 Submission Checklist — KeeperHub Agents Onchain Hackathon 2026
 
 > **Project**: YieldFarmer AI  
-> **Team**: [TEAM_NAME — 待填写]  
-> **Submission Status**: 🔴 未提交
+> **Team**: 赵昱博 (YuBo Zhao) — 单人项目  
+> **Submission Status**: 🟡 进行中
 
 ---
 
@@ -12,7 +12,7 @@
 |------|------|
 | **DoraHacks Project Page** | [待填写 — DoraHacks 项目链接] |
 | **Demo Video (YouTube/Bilibili)** | [待填写 — 30-60秒 Demo 视频链接] |
-| **GitHub Repository** | [待填写 — 开源仓库链接] |
+| **GitHub Repository** | https://github.com/yi-dong-z/yieldfarmer-ai |
 | **Live Demo / Deployed URL** | [待填写 — 如已部署，提供前端 URL] |
 | **Pitch Deck / Slides** | [待填写 — 路演 PPT 链接] |
 
@@ -67,10 +67,10 @@
 
 | Role | Name | GitHub | Email |
 |------|------|--------|-------|
-| **Team Lead / Full Stack** | [待填写] | [待填写] | [待填写] |
-| **AI / Backend Engineer** | [待填写] | [待填写] | [待填写] |
-| **Frontend / UX** | [待填写] | [待填写] | [待填写] |
-| **Blockchain / Smart Contract** | [待填写] | [待填写] | [待填写] |
+| **Team Lead / Full Stack** | 赵昱博 (YuBo Zhao) | [yi-dong-z](https://github.com/yi-dong-z) | yi-dong-z@users.noreply.github.com |
+| **AI / Backend Engineer** | 赵昱博 (YuBo Zhao) | [yi-dong-z](https://github.com/yi-dong-z) | yi-dong-z@users.noreply.github.com |
+| **Frontend / UX** | 赵昱博 (YuBo Zhao) | [yi-dong-z](https://github.com/yi-dong-z) | yi-dong-z@users.noreply.github.com |
+| **Blockchain / Smart Contract** | 赵昱博 (YuBo Zhao) | [yi-dong-z](https://github.com/yi-dong-z) | yi-dong-z@users.noreply.github.com |
 
 ---
 
